@@ -1,10 +1,12 @@
 {
   "domain": "ha_crud",
   "name": "HA CRUD REST API",
-  "version": "1.0.0",
-  "documentation": "https://github.com/kgamble/ha-crud",
+  "version": "1.1.0",
+  "documentation": "https://github.com/keith-gamble/ha-crud",
   "dependencies": ["lovelace", "http"],
-  "codeowners": [],
+  "codeowners": ["@keith-gamble"],
   "iot_class": "local_push",
-  "integration_type": "service"
+  "integration_type": "service",
+  "config_flow": true,
+  "single_config_entry": true
 }

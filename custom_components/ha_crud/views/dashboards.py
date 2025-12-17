@@ -13,7 +13,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
 from ..const import (
-    API_BASE_PATH,
+    API_BASE_PATH_DASHBOARDS,
     CONF_ICON,
     CONF_REQUIRE_ADMIN,
     CONF_SHOW_IN_SIDEBAR,
@@ -53,7 +53,7 @@ def get_dashboards_collection(hass: HomeAssistant):
 class DashboardListView(HomeAssistantView):
     """View to list all dashboards and create new ones."""
 
-    url = API_BASE_PATH
+    url = API_BASE_PATH_DASHBOARDS
     name = "api:config:dashboards"
     requires_auth = True
 
@@ -196,7 +196,7 @@ class DashboardListView(HomeAssistantView):
 class DashboardDetailView(HomeAssistantView):
     """View for single dashboard operations."""
 
-    url = API_BASE_PATH + "/{dashboard_id}"
+    url = API_BASE_PATH_DASHBOARDS + "/{dashboard_id}"
     name = "api:config:dashboard"
     requires_auth = True
 
@@ -533,7 +533,7 @@ class DashboardDetailView(HomeAssistantView):
 class DashboardConfigView(HomeAssistantView):
     """View for dashboard configuration (views/cards) operations."""
 
-    url = API_BASE_PATH + "/{dashboard_id}/config"
+    url = API_BASE_PATH_DASHBOARDS + "/{dashboard_id}/config"
     name = "api:config:dashboard:config"
     requires_auth = True
 

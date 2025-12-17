@@ -2,8 +2,34 @@
 
 DOMAIN = "ha_crud"
 
+# Configuration
+CONF_ENABLED_RESOURCES = "enabled_resources"
+
+# Resource types that can be exposed via the API
+RESOURCE_DASHBOARDS = "dashboards"
+RESOURCE_AUTOMATIONS = "automations"
+RESOURCE_SCENES = "scenes"
+RESOURCE_SCRIPTS = "scripts"
+RESOURCE_HELPERS = "helpers"
+
+# All available resource types (for config flow)
+AVAILABLE_RESOURCES = [
+    RESOURCE_DASHBOARDS,
+    RESOURCE_AUTOMATIONS,
+    RESOURCE_SCENES,
+    RESOURCE_SCRIPTS,
+    RESOURCE_HELPERS,
+]
+
+# Default enabled resources
+DEFAULT_RESOURCES = [RESOURCE_DASHBOARDS]
+
 # API Base paths
-API_BASE_PATH = "/api/config/dashboards"
+API_BASE_PATH_DASHBOARDS = "/api/config/dashboards"
+API_BASE_PATH_AUTOMATIONS = "/api/config/automations"
+API_BASE_PATH_SCENES = "/api/config/scenes"
+API_BASE_PATH_SCRIPTS = "/api/config/scripts"
+API_BASE_PATH_HELPERS = "/api/config/helpers"
 
 # Lovelace data keys
 LOVELACE_DATA = "lovelace"

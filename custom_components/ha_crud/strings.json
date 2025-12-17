@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HA CRUD REST API",
+        "description": "Configure which Home Assistant resources to expose via REST API endpoints.\n\nDocumentation: [{docs_url}]({docs_url})",
+        "data": {
+          "enabled_resources": "Enabled Resources"
+        },
+        "data_description": {
+          "enabled_resources": "Select which resource types to expose via the REST API. You can change this later in the integration options."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "HA CRUD REST API is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure HA CRUD REST API",
+        "description": "Select which resources to expose via REST API endpoints.",
+        "data": {
+          "enabled_resources": "Enabled Resources"
+        },
+        "data_description": {
+          "enabled_resources": "Changes take effect after reloading the integration."
+        }
+      }
+    }
+  }
+}
