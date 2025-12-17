@@ -15,6 +15,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_ENABLED_RESOURCES,
+    DATA_DASHBOARDS_COLLECTION,
     DEFAULT_RESOURCES,
     DOMAIN,
     RESOURCE_DASHBOARDS,
@@ -41,6 +42,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _LOGGER.info("HA CRUD REST API setting up with resources: %s", enabled_resources)
 
+    # Initialize DashboardsCollection if dashboards are enabled
+    if RESOURCE_DASHBOARDS in enabled_resources:
+        await _setup_dashboards_collection(hass)
+
     # Register views for enabled resources
     _register_views(hass, enabled_resources)
 
@@ -48,6 +53,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_update_options))
 
     return True
+
+
+async def _setup_dashboards_collection(hass: HomeAssistant) -> None:
+    """Set up the dashboards collection for CRUD operations."""
+    # Import here to avoid circular imports and ensure lovelace is loaded
+    try:
+        from homeassistant.components.lovelace.dashboard import DashboardsCollection
+    except ImportError:
+        _LOGGER.error("Could not import DashboardsCollection from lovelace")
+        return
+
+    # Create and load the collection (shares storage with lovelace component)
+    collection = DashboardsCollection(hass)
+    await collection.async_load()
+    hass.data[DATA_DASHBOARDS_COLLECTION] = collection
+    _LOGGER.debug("DashboardsCollection initialized with %d items", len(collection.data))
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

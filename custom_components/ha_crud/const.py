@@ -51,3 +51,6 @@ ERR_DASHBOARD_EXISTS = "dashboard_already_exists"
 ERR_INVALID_CONFIG = "invalid_config"
 ERR_YAML_DASHBOARD = "yaml_dashboard_readonly"
 ERR_DEFAULT_DASHBOARD = "default_dashboard_protected"
+
+# Data keys for hass.data storage
+DATA_DASHBOARDS_COLLECTION = f"{DOMAIN}_dashboards_collection"
