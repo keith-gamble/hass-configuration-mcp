@@ -13,6 +13,7 @@ import voluptuous as vol
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 
 from ..const import (
     API_BASE_PATH_AUTOMATIONS,
@@ -159,11 +160,12 @@ def _get_automation_entity(hass: HomeAssistant, entity_id: str):
     return component.get_entity(entity_id)
 
 
-def _format_automation(entity, include_config: bool = False) -> dict[str, Any]:
+def _format_automation(entity, hass: HomeAssistant = None, include_config: bool = False) -> dict[str, Any]:
     """Format an automation entity for API response.
 
     Args:
         entity: The automation entity
+        hass: Home Assistant instance (optional, needed for category/label info)
         include_config: Whether to include the full config
 
     Returns:
@@ -179,6 +181,20 @@ def _format_automation(entity, include_config: bool = False) -> dict[str, Any]:
         "mode": entity.extra_state_attributes.get("mode", "single"),
         "current": entity.extra_state_attributes.get("current", 0),
     }
+
+    # Include category and labels from entity registry if hass is provided
+    if hass is not None:
+        try:
+            entity_registry = er.async_get(hass)
+            registry_entry = entity_registry.async_get(entity.entity_id)
+            if registry_entry:
+                # Categories are stored per-scope in entity registry
+                result["categories"] = dict(registry_entry.categories) if registry_entry.categories else {}
+                result["labels"] = list(registry_entry.labels) if registry_entry.labels else []
+        except Exception:
+            # If registry lookup fails, just skip category/label info
+            result["categories"] = {}
+            result["labels"] = []
 
     if include_config:
         # Include the raw config if requested
@@ -290,7 +306,7 @@ class AutomationListView(HomeAssistantView):
         automations = []
         for entity in component.entities:
             try:
-                automations.append(_format_automation(entity, include_config=False))
+                automations.append(_format_automation(entity, hass=hass, include_config=False))
             except Exception as err:
                 _LOGGER.warning(
                     "Error getting info for automation %s: %s",
@@ -480,7 +496,7 @@ class AutomationDetailView(HomeAssistantView):
                 ERR_AUTOMATION_NOT_FOUND,
             )
 
-        return self.json(_format_automation(entity, include_config=True))
+        return self.json(_format_automation(entity, hass=hass, include_config=True))
 
     async def put(
         self, request: web.Request, automation_id: str
@@ -619,7 +635,9 @@ class AutomationDetailView(HomeAssistantView):
             {
                 "alias": "New Name",
                 "description": "New description",
-                "enabled": true/false
+                "enabled": true/false,
+                "category_id": "category_ulid",  # Assign category
+                "labels": ["label_id_1", "label_id_2"]  # Assign labels
             }
 
         Returns:
@@ -662,9 +680,12 @@ class AutomationDetailView(HomeAssistantView):
                 ERR_INVALID_CONFIG,
             )
 
+        entity_id = self._get_entity_id(automation_id)
+        search_id = automation_id.replace("automation.", "")
+        result_messages = []
+
         # Handle enable/disable via service call
         if "enabled" in body:
-            entity_id = self._get_entity_id(automation_id)
             entity = _get_automation_entity(hass, entity_id)
 
             if entity is None:
@@ -682,6 +703,7 @@ class AutomationDetailView(HomeAssistantView):
                     {"entity_id": entity_id},
                     blocking=True,
                 )
+                result_messages.append(f"{'Enabled' if body['enabled'] else 'Disabled'}")
             except Exception as err:
                 _LOGGER.exception("Error toggling automation: %s", err)
                 return self.json_message(
@@ -689,77 +711,111 @@ class AutomationDetailView(HomeAssistantView):
                     HTTPStatus.INTERNAL_SERVER_ERROR,
                 )
 
-            # If only enabling/disabling, return early
-            if len(body) == 1:
-                return self.json({
-                    "id": entity.unique_id,
-                    "entity_id": entity_id,
-                    "enabled": body["enabled"],
-                    "message": f"Automation {'enabled' if body['enabled'] else 'disabled'}",
-                })
+        # Handle category and label updates via entity registry
+        if "category_id" in body or "labels" in body:
+            entity_registry = er.async_get(hass)
+            registry_entry = entity_registry.async_get(entity_id)
 
-        # Load existing automations for other updates
-        automations = await _load_automation_config(hass)
+            if registry_entry is None:
+                return self.json_message(
+                    f"Automation '{automation_id}' not found in entity registry",
+                    HTTPStatus.NOT_FOUND,
+                    ERR_AUTOMATION_NOT_FOUND,
+                )
 
-        # Find the automation to update
-        found_idx = None
-        search_id = automation_id.replace("automation.", "")
+            update_kwargs = {}
 
-        for idx, automation in enumerate(automations):
-            if automation.get("id") == search_id or automation.get("id") == automation_id:
-                found_idx = idx
-                break
+            if "category_id" in body:
+                category_id = body["category_id"]
+                if category_id is None or category_id == "":
+                    update_kwargs["categories"] = {}
+                else:
+                    update_kwargs["categories"] = {"automation": category_id}
+                result_messages.append("Category updated")
 
-        if found_idx is None:
-            return self.json_message(
-                f"Automation '{automation_id}' not found",
-                HTTPStatus.NOT_FOUND,
-                ERR_AUTOMATION_NOT_FOUND,
-            )
+            if "labels" in body:
+                label_ids = body["labels"]
+                if label_ids is None:
+                    update_kwargs["labels"] = set()
+                else:
+                    update_kwargs["labels"] = set(label_ids)
+                result_messages.append("Labels updated")
 
-        # Merge updates with existing config
-        updated_automation = automations[found_idx].copy()
+            if update_kwargs:
+                try:
+                    entity_registry.async_update_entity(entity_id, **update_kwargs)
+                except Exception as err:
+                    _LOGGER.exception("Error updating entity registry: %s", err)
+                    return self.json_message(
+                        f"Error updating category/labels: {err}",
+                        HTTPStatus.INTERNAL_SERVER_ERROR,
+                    )
 
-        # Update allowed fields
-        updatable_fields = [
+        # Check if we need to update config file fields
+        config_fields = [
             "alias", "description", "mode", "max", "max_exceeded",
             "variables", "trigger_variables", "triggers", "trigger",
             "conditions", "condition", "actions", "action"
         ]
+        has_config_updates = any(field in body for field in config_fields)
 
-        for field in updatable_fields:
-            if field in body:
-                updated_automation[field] = body[field]
+        if has_config_updates:
+            # Load existing automations for config updates
+            automations = await _load_automation_config(hass)
 
-        # Validate actions if they were updated
-        actions_to_validate = body.get("actions") or body.get("action")
-        if actions_to_validate:
-            action_errors = validate_actions(hass, actions_to_validate)
-            if action_errors:
+            # Find the automation to update
+            found_idx = None
+            for idx, automation in enumerate(automations):
+                if automation.get("id") == search_id or automation.get("id") == automation_id:
+                    found_idx = idx
+                    break
+
+            if found_idx is None:
                 return self.json_message(
-                    "Invalid actions in automation:\n" + "\n".join(action_errors),
-                    HTTPStatus.BAD_REQUEST,
-                    ERR_AUTOMATION_INVALID_CONFIG,
+                    f"Automation '{automation_id}' not found",
+                    HTTPStatus.NOT_FOUND,
+                    ERR_AUTOMATION_NOT_FOUND,
                 )
 
-        # Update and save
-        automations[found_idx] = updated_automation
+            # Merge updates with existing config
+            updated_automation = automations[found_idx].copy()
 
-        try:
-            await _save_automation_config(hass, automations)
-            await _reload_automations(hass)
-        except Exception as err:
-            _LOGGER.exception("Error updating automation: %s", err)
-            return self.json_message(
-                f"Error updating automation: {err}",
-                HTTPStatus.INTERNAL_SERVER_ERROR,
-            )
+            for field in config_fields:
+                if field in body:
+                    updated_automation[field] = body[field]
+
+            # Validate actions if they were updated
+            actions_to_validate = body.get("actions") or body.get("action")
+            if actions_to_validate:
+                action_errors = validate_actions(hass, actions_to_validate)
+                if action_errors:
+                    return self.json_message(
+                        "Invalid actions in automation:\n" + "\n".join(action_errors),
+                        HTTPStatus.BAD_REQUEST,
+                        ERR_AUTOMATION_INVALID_CONFIG,
+                    )
+
+            # Update and save
+            automations[found_idx] = updated_automation
+
+            try:
+                await _save_automation_config(hass, automations)
+                await _reload_automations(hass)
+                result_messages.append("Config updated")
+            except Exception as err:
+                _LOGGER.exception("Error updating automation: %s", err)
+                return self.json_message(
+                    f"Error updating automation: {err}",
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+
+        if not result_messages:
+            result_messages.append("No changes made")
 
         return self.json({
-            "id": updated_automation["id"],
-            "entity_id": f"automation.{updated_automation['id']}",
-            "alias": updated_automation.get("alias"),
-            "message": "Automation updated",
+            "id": search_id,
+            "entity_id": entity_id,
+            "message": ", ".join(result_messages),
         })
 
     async def delete(

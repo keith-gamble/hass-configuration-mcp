@@ -54,6 +54,12 @@ from .logs import (
     LogErrorsView,
     LogListView,
 )
+from .categories import (
+    CategoryDetailView,
+    CategoryScopeListView,
+    LabelDetailView,
+    LabelListView,
+)
 
 __all__ = [
     # Dashboard views
@@ -99,4 +105,9 @@ __all__ = [
     # Log views
     "LogListView",
     "LogErrorsView",
+    # Category/Label views
+    "CategoryScopeListView",
+    "CategoryDetailView",
+    "LabelListView",
+    "LabelDetailView",
 ]

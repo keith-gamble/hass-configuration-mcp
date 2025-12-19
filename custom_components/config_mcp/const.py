@@ -43,6 +43,18 @@ CONF_SCENES_DELETE = "scenes_delete"
 # Logs (MCP only - for debugging/verification)
 CONF_LOGS_READ = "logs_read"
 
+# Categories (for organizing automations, scripts, etc.)
+CONF_CATEGORIES_READ = "categories_read"
+CONF_CATEGORIES_CREATE = "categories_create"
+CONF_CATEGORIES_UPDATE = "categories_update"
+CONF_CATEGORIES_DELETE = "categories_delete"
+
+# Labels (for tagging entities, automations, scripts, etc.)
+CONF_LABELS_READ = "labels_read"
+CONF_LABELS_CREATE = "labels_create"
+CONF_LABELS_UPDATE = "labels_update"
+CONF_LABELS_DELETE = "labels_delete"
+
 # Deprecated keys for migration from older versions
 CONF_DASHBOARDS_WRITE = "dashboards_write"
 CONF_AUTOMATIONS_WRITE = "automations_write"
@@ -64,6 +76,10 @@ RESOURCE_AREAS = "areas"
 RESOURCE_INTEGRATIONS = "integrations"
 RESOURCE_SERVICES = "services"
 RESOURCE_LOGS = "logs"
+
+# Resource types for organization
+RESOURCE_CATEGORIES = "categories"
+RESOURCE_LABELS = "labels"
 
 # All available resource types (for config flow)
 AVAILABLE_RESOURCES = [
@@ -124,6 +140,16 @@ DEFAULT_OPTIONS = {
     CONF_SCENES_DELETE: False,
     # Logs - disabled by default for security
     CONF_LOGS_READ: False,
+    # Categories - read enabled, write disabled by default
+    CONF_CATEGORIES_READ: True,
+    CONF_CATEGORIES_CREATE: False,
+    CONF_CATEGORIES_UPDATE: False,
+    CONF_CATEGORIES_DELETE: False,
+    # Labels - read enabled, write disabled by default
+    CONF_LABELS_READ: True,
+    CONF_LABELS_CREATE: False,
+    CONF_LABELS_UPDATE: False,
+    CONF_LABELS_DELETE: False,
     # MCP Server - enabled by default
     CONF_MCP_SERVER: True,
     # MCP OAuth - disabled by default (requires hass-oidc-auth)
@@ -149,6 +175,13 @@ API_BASE_PATH_INTEGRATIONS = "/api/config_mcp/integrations"
 API_BASE_PATH_SERVICES = "/api/config_mcp/services"
 API_BASE_PATH_RESOURCES = "/api/config_mcp/resources"
 API_BASE_PATH_LOGS = "/api/config_mcp/logs"
+
+# Organization API paths
+API_BASE_PATH_CATEGORIES = "/api/config_mcp/categories"
+API_BASE_PATH_LABELS = "/api/config_mcp/labels"
+
+# Valid category scopes (from Home Assistant's CategoryRegistry)
+CATEGORY_SCOPES = ["automation", "script", "helper"]
 
 # Lovelace data keys
 LOVELACE_DATA = "lovelace"
@@ -198,6 +231,15 @@ ERR_SCENE_INVALID_CONFIG = "scene_invalid_config"
 ERR_LOG_NOT_FOUND = "log_not_found"
 ERR_LOG_INVALID_PARAMS = "log_invalid_params"
 
+# Error codes - Categories
+ERR_CATEGORY_NOT_FOUND = "category_not_found"
+ERR_CATEGORY_EXISTS = "category_already_exists"
+ERR_CATEGORY_INVALID_SCOPE = "category_invalid_scope"
+
+# Error codes - Labels
+ERR_LABEL_NOT_FOUND = "label_not_found"
+ERR_LABEL_EXISTS = "label_already_exists"
+
 # Data keys for hass.data storage
 DATA_DASHBOARDS_COLLECTION = f"{DOMAIN}_dashboards_collection"
 DATA_AUTOMATIONS_COMPONENT = f"{DOMAIN}_automations_component"
@@ -205,4 +247,4 @@ DATA_AUTOMATIONS_COMPONENT = f"{DOMAIN}_automations_component"
 # MCP Server configuration
 API_BASE_PATH_MCP = "/api/config_mcp/mcp"
 MCP_SERVER_NAME = "config-mcp"
-MCP_SERVER_VERSION = "1.1.1"
+MCP_SERVER_VERSION = "1.2.0"

@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from ..mcp_registry import mcp_tool
 from ..views.scripts import (
@@ -41,7 +42,7 @@ async def list_scripts(hass: HomeAssistant, arguments: dict[str, Any]) -> list[d
     scripts = []
     for entity in component.entities:
         try:
-            scripts.append(_format_script(entity, include_config=False))
+            scripts.append(_format_script(entity, hass=hass, include_config=False))
         except Exception as err:
             _LOGGER.warning("Error formatting script %s: %s", entity.entity_id, err)
     return scripts
@@ -76,7 +77,7 @@ async def get_script(hass: HomeAssistant, arguments: dict[str, Any]) -> dict[str
     if entity is None:
         raise ValueError(f"Script '{script_id}' not found")
 
-    return _format_script(entity, include_config=True)
+    return _format_script(entity, hass=hass, include_config=True)
 
 
 @mcp_tool(
@@ -197,13 +198,26 @@ async def update_script(hass: HomeAssistant, arguments: dict[str, Any]) -> dict[
 
 @mcp_tool(
     name="ha_patch_script",
-    description="Partially update a script. Only provided fields are updated.",
+    description=(
+        "Partially update a script. Only provided fields are updated. "
+        "Use category_id to assign a category (from ha_list_categories with scope='script'). "
+        "Use labels to assign labels."
+    ),
     schema={
         "type": "object",
         "properties": {
             "script_id": {
                 "type": "string",
                 "description": "The script ID to update",
+            },
+            "category_id": {
+                "type": "string",
+                "description": "Category ID to assign (from ha_list_categories scope='script'). Use null or empty string to remove.",
+            },
+            "labels": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of label IDs to assign (from ha_list_labels). Replaces existing labels.",
             },
             "alias": {"type": "string"},
             "description": {"type": "string"},
@@ -220,26 +234,70 @@ async def patch_script(hass: HomeAssistant, arguments: dict[str, Any]) -> dict[s
     """Partial update of a script."""
     script_id = arguments["script_id"]
     clean_id = script_id.replace("script.", "")
-    scripts = await _load_script_config(hass)
+    entity_id = f"script.{clean_id}"
 
-    if clean_id not in scripts:
-        raise ValueError(f"Script '{script_id}' not found")
+    result_message = []
 
-    updated = scripts[clean_id].copy()
-    for field in ["alias", "description", "icon", "mode", "max", "max_exceeded", "fields", "variables", "sequence"]:
-        if field in arguments:
-            updated[field] = arguments[field]
+    # Handle category and label updates via entity registry
+    if "category_id" in arguments or "labels" in arguments:
+        entity_registry = er.async_get(hass)
+        registry_entry = entity_registry.async_get(entity_id)
 
-    if "sequence" in arguments:
-        sequence_errors = validate_sequence(hass, arguments["sequence"])
-        if sequence_errors:
-            raise ValueError("Invalid actions in sequence:\n" + "\n".join(sequence_errors))
+        if registry_entry is None:
+            raise ValueError(f"Script '{script_id}' not found in entity registry")
 
-    scripts[clean_id] = updated
-    await _save_script_config(hass, scripts)
-    await _reload_scripts(hass)
+        update_kwargs: dict[str, Any] = {}
 
-    return {"id": clean_id, "entity_id": f"script.{clean_id}", "message": "Script updated"}
+        if "category_id" in arguments:
+            category_id = arguments["category_id"]
+            if category_id is None or category_id == "":
+                # Remove category - set to empty dict for script scope
+                update_kwargs["categories"] = {}
+            else:
+                # Set category for script scope
+                update_kwargs["categories"] = {"script": category_id}
+            result_message.append("Category updated")
+
+        if "labels" in arguments:
+            label_ids = arguments["labels"]
+            if label_ids is None:
+                update_kwargs["labels"] = set()
+            else:
+                update_kwargs["labels"] = set(label_ids)
+            result_message.append("Labels updated")
+
+        if update_kwargs:
+            entity_registry.async_update_entity(entity_id, **update_kwargs)
+
+    # Check if we need to update config file fields
+    config_fields = ["alias", "description", "icon", "mode", "max", "max_exceeded", "fields", "variables", "sequence"]
+    has_config_updates = any(field in arguments for field in config_fields)
+
+    if has_config_updates:
+        scripts = await _load_script_config(hass)
+
+        if clean_id not in scripts:
+            raise ValueError(f"Script '{script_id}' not found in config")
+
+        updated = scripts[clean_id].copy()
+        for field in config_fields:
+            if field in arguments:
+                updated[field] = arguments[field]
+
+        if "sequence" in arguments:
+            sequence_errors = validate_sequence(hass, arguments["sequence"])
+            if sequence_errors:
+                raise ValueError("Invalid actions in sequence:\n" + "\n".join(sequence_errors))
+
+        scripts[clean_id] = updated
+        await _save_script_config(hass, scripts)
+        await _reload_scripts(hass)
+        result_message.append("Config updated")
+
+    if not result_message:
+        result_message.append("No changes made")
+
+    return {"id": clean_id, "entity_id": entity_id, "message": ", ".join(result_message)}
 
 
 @mcp_tool(

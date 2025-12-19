@@ -10,6 +10,7 @@ A Home Assistant custom component that exposes an MCP (Model Context Protocol) s
 - **Scripts** - Create, update, delete, run, and stop scripts
 - **Scenes** - Create, update, delete, and activate scenes
 - **System Discovery** - Query entities, devices, areas, floors, integrations, and services
+- **Categories & Labels** - Manage categories and labels for organizing automations/scripts
 - **Log Reading** - Access Home Assistant logs for debugging
 - **OAuth Support** - Browser-based authentication for MCP clients (requires hass-oidc-auth)
 - **Granular Permissions** - Enable/disable each capability independently
@@ -110,6 +111,22 @@ Then run `/mcp` in Claude Code and select "Authenticate" to login via browser.
 | `ha_list_services` | List available services |
 | `ha_get_service` | Get service details |
 
+### Categories & Labels
+| Tool | Description |
+|------|-------------|
+| `ha_list_categories` | List categories by scope (automation/script/helper) |
+| `ha_get_category` | Get category details |
+| `ha_create_category` | Create new category |
+| `ha_update_category` | Update category name/icon |
+| `ha_delete_category` | Delete category |
+| `ha_list_labels` | List all labels |
+| `ha_get_label` | Get label details |
+| `ha_create_label` | Create new label |
+| `ha_update_label` | Update label properties |
+| `ha_delete_label` | Delete label |
+
+> **Note:** Use `ha_patch_automation` or `ha_patch_script` with `category_id` and `labels` parameters to assign categories/labels to automations and scripts.
+
 ### Logs
 | Tool | Description |
 |------|-------------|
@@ -133,6 +150,8 @@ All endpoints are available at `/api/config_mcp/`:
 | Floors | `/api/config_mcp/floors` |
 | Integrations | `/api/config_mcp/integrations` |
 | Services | `/api/config_mcp/services` |
+| Categories | `/api/config_mcp/categories/{scope}` |
+| Labels | `/api/config_mcp/labels` |
 | Logs | `/api/config_mcp/logs` |
 
 ## Authentication
@@ -154,6 +173,7 @@ After installation, configure via Settings > Integrations > Configuration MCP Se
 4. **Automations** - Granular read/create/update/delete permissions
 5. **Scripts** - Granular read/create/update/delete permissions
 6. **Scenes** - Granular read/create/update/delete permissions
+7. **Categories & Labels** - Manage organizational categories and labels
 
 ## License
 

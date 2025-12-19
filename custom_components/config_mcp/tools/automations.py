@@ -10,6 +10,7 @@ import uuid
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from ..mcp_registry import mcp_tool
 from ..views.automations import (
@@ -42,7 +43,7 @@ async def list_automations(hass: HomeAssistant, arguments: dict[str, Any]) -> li
     automations = []
     for entity in component.entities:
         try:
-            automations.append(_format_automation(entity, include_config=False))
+            automations.append(_format_automation(entity, hass=hass, include_config=False))
         except Exception as err:
             _LOGGER.warning("Error formatting automation %s: %s", entity.entity_id, err)
     return automations
@@ -78,7 +79,7 @@ async def get_automation(hass: HomeAssistant, arguments: dict[str, Any]) -> dict
     if entity is None:
         raise ValueError(f"Automation '{automation_id}' not found")
 
-    return _format_automation(entity, include_config=True)
+    return _format_automation(entity, hass=hass, include_config=True)
 
 
 @mcp_tool(
@@ -224,7 +225,8 @@ async def update_automation(hass: HomeAssistant, arguments: dict[str, Any]) -> d
     name="ha_patch_automation",
     description=(
         "Partially update an automation. Only provided fields are updated. "
-        "Use enabled field to enable/disable."
+        "Use enabled field to enable/disable. Use category_id to assign a category "
+        "(from ha_list_categories with scope='automation'). Use labels to assign labels."
     ),
     schema={
         "type": "object",
@@ -236,6 +238,15 @@ async def update_automation(hass: HomeAssistant, arguments: dict[str, Any]) -> d
             "enabled": {
                 "type": "boolean",
                 "description": "Enable or disable the automation",
+            },
+            "category_id": {
+                "type": "string",
+                "description": "Category ID to assign (from ha_list_categories scope='automation'). Use null or empty string to remove.",
+            },
+            "labels": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of label IDs to assign (from ha_list_labels). Replaces existing labels.",
             },
             "alias": {"type": "string"},
             "description": {"type": "string"},
@@ -254,38 +265,79 @@ async def patch_automation(hass: HomeAssistant, arguments: dict[str, Any]) -> di
     entity_id = f"automation.{automation_id}" if not automation_id.startswith("automation.") else automation_id
     search_id = automation_id.replace("automation.", "")
 
+    result_message = []
+
     # Handle enable/disable
     if "enabled" in arguments:
         service = "turn_on" if arguments["enabled"] else "turn_off"
         await hass.services.async_call("automation", service, {"entity_id": entity_id}, blocking=True)
-        if len(arguments) == 2:  # Only automation_id and enabled
-            return {"entity_id": entity_id, "enabled": arguments["enabled"], "message": f"Automation {'enabled' if arguments['enabled'] else 'disabled'}"}
+        result_message.append(f"{'Enabled' if arguments['enabled'] else 'Disabled'}")
 
-    automations = await _load_automation_config(hass)
-    found_idx = None
-    for idx, automation in enumerate(automations):
-        if automation.get("id") == search_id:
-            found_idx = idx
-            break
+    # Handle category and label updates via entity registry
+    if "category_id" in arguments or "labels" in arguments:
+        entity_registry = er.async_get(hass)
+        registry_entry = entity_registry.async_get(entity_id)
 
-    if found_idx is None:
-        raise ValueError(f"Automation '{automation_id}' not found")
+        if registry_entry is None:
+            raise ValueError(f"Automation '{automation_id}' not found in entity registry")
 
-    updated = automations[found_idx].copy()
-    for field in ["alias", "description", "mode", "max", "max_exceeded", "variables", "trigger_variables", "triggers", "conditions", "actions"]:
-        if field in arguments:
-            updated[field] = arguments[field]
+        update_kwargs: dict[str, Any] = {}
 
-    if "actions" in arguments:
-        action_errors = validate_actions(hass, arguments["actions"])
-        if action_errors:
-            raise ValueError("Invalid actions:\n" + "\n".join(action_errors))
+        if "category_id" in arguments:
+            category_id = arguments["category_id"]
+            if category_id is None or category_id == "":
+                # Remove category - set to empty dict for automation scope
+                update_kwargs["categories"] = {}
+            else:
+                # Set category for automation scope
+                update_kwargs["categories"] = {"automation": category_id}
+            result_message.append("Category updated")
 
-    automations[found_idx] = updated
-    await _save_automation_config(hass, automations)
-    await _reload_automations(hass)
+        if "labels" in arguments:
+            label_ids = arguments["labels"]
+            if label_ids is None:
+                update_kwargs["labels"] = set()
+            else:
+                update_kwargs["labels"] = set(label_ids)
+            result_message.append("Labels updated")
 
-    return {"id": search_id, "entity_id": entity_id, "message": "Automation updated"}
+        if update_kwargs:
+            entity_registry.async_update_entity(entity_id, **update_kwargs)
+
+    # Check if we need to update config file fields
+    config_fields = ["alias", "description", "mode", "max", "max_exceeded", "variables", "trigger_variables", "triggers", "conditions", "actions"]
+    has_config_updates = any(field in arguments for field in config_fields)
+
+    if has_config_updates:
+        automations = await _load_automation_config(hass)
+        found_idx = None
+        for idx, automation in enumerate(automations):
+            if automation.get("id") == search_id:
+                found_idx = idx
+                break
+
+        if found_idx is None:
+            raise ValueError(f"Automation '{automation_id}' not found in config")
+
+        updated = automations[found_idx].copy()
+        for field in config_fields:
+            if field in arguments:
+                updated[field] = arguments[field]
+
+        if "actions" in arguments:
+            action_errors = validate_actions(hass, arguments["actions"])
+            if action_errors:
+                raise ValueError("Invalid actions:\n" + "\n".join(action_errors))
+
+        automations[found_idx] = updated
+        await _save_automation_config(hass, automations)
+        await _reload_automations(hass)
+        result_message.append("Config updated")
+
+    if not result_message:
+        result_message.append("No changes made")
+
+    return {"id": search_id, "entity_id": entity_id, "message": ", ".join(result_message)}
 
 
 @mcp_tool(

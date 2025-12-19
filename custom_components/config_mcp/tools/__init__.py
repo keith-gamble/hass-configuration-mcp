@@ -47,6 +47,7 @@ TOOL_MODULES = [
     "scripts",
     "scenes",
     "logs",
+    "categories",  # Categories and labels for organization
 ]
 
 

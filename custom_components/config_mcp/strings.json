@@ -27,7 +27,8 @@
           "dashboards": "Lovelace Dashboards",
           "automations": "Automations",
           "scripts": "Scripts",
-          "scenes": "Scenes"
+          "scenes": "Scenes",
+          "categories": "Categories & Labels"
         }
       },
       "discovery": {
@@ -126,6 +127,30 @@
           "scenes_create": "Create new scenes",
           "scenes_update": "Update scene config and entities",
           "scenes_delete": "Delete scenes"
+        }
+      },
+      "categories": {
+        "title": "Categories & Labels",
+        "description": "Configure category and label management for organizing automations, scripts, and other resources.\n\n**Endpoints:**\n- `/api/config_mcp/categories/{scope}`\n- `/api/config_mcp/labels`",
+        "data": {
+          "categories_read": "Read Categories",
+          "categories_create": "Create Categories",
+          "categories_update": "Update Categories",
+          "categories_delete": "Delete Categories",
+          "labels_read": "Read Labels",
+          "labels_create": "Create Labels",
+          "labels_update": "Update Labels",
+          "labels_delete": "Delete Labels"
+        },
+        "data_description": {
+          "categories_read": "List categories by scope (automation, script, helper)",
+          "categories_create": "Create new categories for organizing resources",
+          "categories_update": "Update category names and icons",
+          "categories_delete": "Delete categories (items will be uncategorized)",
+          "labels_read": "List all labels for cross-scope tagging",
+          "labels_create": "Create new labels for tagging resources",
+          "labels_update": "Update label names, icons, colors, and descriptions",
+          "labels_delete": "Delete labels (items will have label removed)"
         }
       }
     }

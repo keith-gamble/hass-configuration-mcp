@@ -19,6 +19,10 @@ from .const import (
     CONF_AUTOMATIONS_DELETE,
     CONF_AUTOMATIONS_READ,
     CONF_AUTOMATIONS_UPDATE,
+    CONF_CATEGORIES_CREATE,
+    CONF_CATEGORIES_DELETE,
+    CONF_CATEGORIES_READ,
+    CONF_CATEGORIES_UPDATE,
     CONF_DASHBOARDS_CREATE,
     CONF_DASHBOARDS_DELETE,
     CONF_DASHBOARDS_READ,
@@ -30,6 +34,10 @@ from .const import (
     CONF_DISCOVERY_INTEGRATIONS,
     CONF_DISCOVERY_SERVICES,
     CONF_ENABLED_RESOURCES,
+    CONF_LABELS_CREATE,
+    CONF_LABELS_DELETE,
+    CONF_LABELS_READ,
+    CONF_LABELS_UPDATE,
     CONF_LOGS_READ,
     CONF_MCP_OAUTH_ENABLED,
     CONF_MCP_SERVER,
@@ -46,10 +54,12 @@ from .const import (
     DOMAIN,
     RESOURCE_AREAS,
     RESOURCE_AUTOMATIONS,
+    RESOURCE_CATEGORIES,
     RESOURCE_DASHBOARDS,
     RESOURCE_DEVICES,
     RESOURCE_ENTITIES,
     RESOURCE_INTEGRATIONS,
+    RESOURCE_LABELS,
     RESOURCE_LOGS,
     RESOURCE_SCENES,
     RESOURCE_SCRIPTS,
@@ -61,6 +71,8 @@ from .views import (
     AutomationDetailView,
     AutomationListView,
     AutomationTriggerView,
+    CategoryDetailView,
+    CategoryScopeListView,
     DashboardConfigView,
     DashboardDetailView,
     DashboardListView,
@@ -76,6 +88,8 @@ from .views import (
     FloorListView,
     IntegrationDetailView,
     IntegrationListView,
+    LabelDetailView,
+    LabelListView,
     LogErrorsView,
     LogListView,
     ResourceListView,
@@ -440,3 +454,29 @@ def _register_views(hass: HomeAssistant, options: dict[str, Any]) -> None:
         hass.http.register_view(LogErrorsView())
         _REGISTERED_VIEWS.add(RESOURCE_LOGS)
         _LOGGER.info("Registered log API endpoints at /api/config_mcp/logs")
+
+    # Category views (if any category permission is enabled)
+    categories_enabled = (
+        options.get(CONF_CATEGORIES_READ) or
+        options.get(CONF_CATEGORIES_CREATE) or
+        options.get(CONF_CATEGORIES_UPDATE) or
+        options.get(CONF_CATEGORIES_DELETE)
+    )
+    if categories_enabled and RESOURCE_CATEGORIES not in _REGISTERED_VIEWS:
+        hass.http.register_view(CategoryScopeListView())
+        hass.http.register_view(CategoryDetailView())
+        _REGISTERED_VIEWS.add(RESOURCE_CATEGORIES)
+        _LOGGER.info("Registered category API endpoints at /api/config_mcp/categories")
+
+    # Label views (if any label permission is enabled)
+    labels_enabled = (
+        options.get(CONF_LABELS_READ) or
+        options.get(CONF_LABELS_CREATE) or
+        options.get(CONF_LABELS_UPDATE) or
+        options.get(CONF_LABELS_DELETE)
+    )
+    if labels_enabled and RESOURCE_LABELS not in _REGISTERED_VIEWS:
+        hass.http.register_view(LabelListView())
+        hass.http.register_view(LabelDetailView())
+        _REGISTERED_VIEWS.add(RESOURCE_LABELS)
+        _LOGGER.info("Registered label API endpoints at /api/config_mcp/labels")

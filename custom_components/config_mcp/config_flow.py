@@ -16,6 +16,10 @@ from .const import (
     CONF_AUTOMATIONS_READ,
     CONF_AUTOMATIONS_UPDATE,
     CONF_AUTOMATIONS_WRITE,
+    CONF_CATEGORIES_CREATE,
+    CONF_CATEGORIES_DELETE,
+    CONF_CATEGORIES_READ,
+    CONF_CATEGORIES_UPDATE,
     CONF_DASHBOARDS_CREATE,
     CONF_DASHBOARDS_DELETE,
     CONF_DASHBOARDS_READ,
@@ -28,6 +32,10 @@ from .const import (
     CONF_DISCOVERY_INTEGRATIONS,
     CONF_DISCOVERY_SERVICES,
     CONF_ENABLED_RESOURCES,
+    CONF_LABELS_CREATE,
+    CONF_LABELS_DELETE,
+    CONF_LABELS_READ,
+    CONF_LABELS_UPDATE,
     CONF_LOGS_READ,
     CONF_MCP_OAUTH_ENABLED,
     CONF_MCP_SERVER,
@@ -157,6 +165,7 @@ class HaCrudOptionsFlow(OptionsFlow):
                 "automations",
                 "scripts",
                 "scenes",
+                "categories",
             ],
         )
 
@@ -410,6 +419,58 @@ class HaCrudOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_SCENES_DELETE,
                         default=self._options.get(CONF_SCENES_DELETE, False),
+                    ): bool,
+                }
+            ),
+        )
+
+    async def async_step_categories(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure categories and labels API."""
+        # Initialize options if not already done
+        if not self._options:
+            self._options = _migrate_legacy_options(dict(self.config_entry.options))
+
+        if user_input is not None:
+            self._options.update(user_input)
+            return self.async_create_entry(title="", data=self._options)
+
+        return self.async_show_form(
+            step_id="categories",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CATEGORIES_READ,
+                        default=self._options.get(CONF_CATEGORIES_READ, True),
+                    ): bool,
+                    vol.Required(
+                        CONF_CATEGORIES_CREATE,
+                        default=self._options.get(CONF_CATEGORIES_CREATE, False),
+                    ): bool,
+                    vol.Required(
+                        CONF_CATEGORIES_UPDATE,
+                        default=self._options.get(CONF_CATEGORIES_UPDATE, False),
+                    ): bool,
+                    vol.Required(
+                        CONF_CATEGORIES_DELETE,
+                        default=self._options.get(CONF_CATEGORIES_DELETE, False),
+                    ): bool,
+                    vol.Required(
+                        CONF_LABELS_READ,
+                        default=self._options.get(CONF_LABELS_READ, True),
+                    ): bool,
+                    vol.Required(
+                        CONF_LABELS_CREATE,
+                        default=self._options.get(CONF_LABELS_CREATE, False),
+                    ): bool,
+                    vol.Required(
+                        CONF_LABELS_UPDATE,
+                        default=self._options.get(CONF_LABELS_UPDATE, False),
+                    ): bool,
+                    vol.Required(
+                        CONF_LABELS_DELETE,
+                        default=self._options.get(CONF_LABELS_DELETE, False),
                     ): bool,
                 }
             ),

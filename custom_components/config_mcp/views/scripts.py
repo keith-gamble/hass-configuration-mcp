@@ -11,6 +11,7 @@ from aiohttp import web
 
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from ..const import (
     API_BASE_PATH_SCRIPTS,
@@ -130,7 +131,7 @@ def _get_script_entity(hass: HomeAssistant, entity_id: str):
     return component.get_entity(entity_id)
 
 
-def _format_script(entity, include_config: bool = False) -> dict[str, Any]:
+def _format_script(entity, hass: HomeAssistant = None, include_config: bool = False) -> dict[str, Any]:
     """Format a script entity for API response."""
     # Get the script ID from entity_id (script.xxx -> xxx)
     script_id = entity.entity_id.replace("script.", "")
@@ -145,6 +146,20 @@ def _format_script(entity, include_config: bool = False) -> dict[str, Any]:
         "mode": entity.extra_state_attributes.get("mode", "single"),
         "current": entity.extra_state_attributes.get("current", 0),
     }
+
+    # Include category and labels from entity registry if hass is provided
+    if hass is not None:
+        try:
+            entity_registry = er.async_get(hass)
+            registry_entry = entity_registry.async_get(entity.entity_id)
+            if registry_entry:
+                # Categories are stored per-scope in entity registry
+                result["categories"] = dict(registry_entry.categories) if registry_entry.categories else {}
+                result["labels"] = list(registry_entry.labels) if registry_entry.labels else []
+        except Exception:
+            # If registry lookup fails, just skip category/label info
+            result["categories"] = {}
+            result["labels"] = []
 
     if include_config:
         # Include the raw config if available
@@ -250,7 +265,7 @@ class ScriptListView(HomeAssistantView):
         scripts = []
         for entity in component.entities:
             try:
-                scripts.append(_format_script(entity, include_config=False))
+                scripts.append(_format_script(entity, hass=hass, include_config=False))
             except Exception as err:
                 _LOGGER.warning(
                     "Error getting info for script %s: %s",
@@ -424,7 +439,7 @@ class ScriptDetailView(HomeAssistantView):
                 ERR_SCRIPT_NOT_FOUND,
             )
 
-        return self.json(_format_script(entity, include_config=True))
+        return self.json(_format_script(entity, hass=hass, include_config=True))
 
     async def put(
         self, request: web.Request, script_id: str
@@ -521,7 +536,16 @@ class ScriptDetailView(HomeAssistantView):
     async def patch(
         self, request: web.Request, script_id: str
     ) -> web.Response:
-        """Handle PATCH request - partial update of script."""
+        """Handle PATCH request - partial update of script.
+
+        Request body (all fields optional):
+            {
+                "alias": "New Name",
+                "description": "New description",
+                "category_id": "category_ulid",  # Assign category
+                "labels": ["label_id_1", "label_id_2"]  # Assign labels
+            }
+        """
         hass: HomeAssistant = request.app["hass"]
 
         if not check_permission(hass, CONF_SCRIPTS_UPDATE):
@@ -553,58 +577,106 @@ class ScriptDetailView(HomeAssistantView):
                 ERR_INVALID_CONFIG,
             )
 
-        # Load existing scripts
-        scripts = await _load_script_config(hass)
         clean_id = self._get_script_id(script_id)
+        entity_id = f"script.{clean_id}"
+        result_messages = []
 
-        if clean_id not in scripts:
-            return self.json_message(
-                f"Script '{script_id}' not found",
-                HTTPStatus.NOT_FOUND,
-                ERR_SCRIPT_NOT_FOUND,
-            )
+        # Handle category and label updates via entity registry
+        if "category_id" in body or "labels" in body:
+            entity_registry = er.async_get(hass)
+            registry_entry = entity_registry.async_get(entity_id)
 
-        # Merge updates with existing config
-        updated_script = scripts[clean_id].copy()
+            if registry_entry is None:
+                return self.json_message(
+                    f"Script '{script_id}' not found in entity registry",
+                    HTTPStatus.NOT_FOUND,
+                    ERR_SCRIPT_NOT_FOUND,
+                )
 
-        # Update allowed fields
-        updatable_fields = [
+            update_kwargs = {}
+
+            if "category_id" in body:
+                category_id = body["category_id"]
+                if category_id is None or category_id == "":
+                    update_kwargs["categories"] = {}
+                else:
+                    update_kwargs["categories"] = {"script": category_id}
+                result_messages.append("Category updated")
+
+            if "labels" in body:
+                label_ids = body["labels"]
+                if label_ids is None:
+                    update_kwargs["labels"] = set()
+                else:
+                    update_kwargs["labels"] = set(label_ids)
+                result_messages.append("Labels updated")
+
+            if update_kwargs:
+                try:
+                    entity_registry.async_update_entity(entity_id, **update_kwargs)
+                except Exception as err:
+                    _LOGGER.exception("Error updating entity registry: %s", err)
+                    return self.json_message(
+                        f"Error updating category/labels: {err}",
+                        HTTPStatus.INTERNAL_SERVER_ERROR,
+                    )
+
+        # Check if we need to update config file fields
+        config_fields = [
             "alias", "description", "icon", "mode", "max", "max_exceeded",
             "fields", "variables", "sequence"
         ]
+        has_config_updates = any(field in body for field in config_fields)
 
-        for field in updatable_fields:
-            if field in body:
-                updated_script[field] = body[field]
+        if has_config_updates:
+            # Load existing scripts
+            scripts = await _load_script_config(hass)
 
-        # Validate sequence if it was updated
-        if "sequence" in body:
-            sequence_errors = validate_sequence(hass, body["sequence"])
-            if sequence_errors:
+            if clean_id not in scripts:
                 return self.json_message(
-                    "Invalid actions in script sequence:\n" + "\n".join(sequence_errors),
-                    HTTPStatus.BAD_REQUEST,
-                    ERR_SCRIPT_INVALID_CONFIG,
+                    f"Script '{script_id}' not found",
+                    HTTPStatus.NOT_FOUND,
+                    ERR_SCRIPT_NOT_FOUND,
                 )
 
-        # Update and save
-        scripts[clean_id] = updated_script
+            # Merge updates with existing config
+            updated_script = scripts[clean_id].copy()
 
-        try:
-            await _save_script_config(hass, scripts)
-            await _reload_scripts(hass)
-        except Exception as err:
-            _LOGGER.exception("Error updating script: %s", err)
-            return self.json_message(
-                f"Error updating script: {err}",
-                HTTPStatus.INTERNAL_SERVER_ERROR,
-            )
+            for field in config_fields:
+                if field in body:
+                    updated_script[field] = body[field]
+
+            # Validate sequence if it was updated
+            if "sequence" in body:
+                sequence_errors = validate_sequence(hass, body["sequence"])
+                if sequence_errors:
+                    return self.json_message(
+                        "Invalid actions in script sequence:\n" + "\n".join(sequence_errors),
+                        HTTPStatus.BAD_REQUEST,
+                        ERR_SCRIPT_INVALID_CONFIG,
+                    )
+
+            # Update and save
+            scripts[clean_id] = updated_script
+
+            try:
+                await _save_script_config(hass, scripts)
+                await _reload_scripts(hass)
+                result_messages.append("Config updated")
+            except Exception as err:
+                _LOGGER.exception("Error updating script: %s", err)
+                return self.json_message(
+                    f"Error updating script: {err}",
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+
+        if not result_messages:
+            result_messages.append("No changes made")
 
         return self.json({
             "id": clean_id,
-            "entity_id": f"script.{clean_id}",
-            "alias": updated_script.get("alias", clean_id),
-            "message": "Script updated",
+            "entity_id": entity_id,
+            "message": ", ".join(result_messages),
         })
 
     async def delete(
