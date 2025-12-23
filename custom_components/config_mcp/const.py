@@ -247,4 +247,4 @@ DATA_AUTOMATIONS_COMPONENT = f"{DOMAIN}_automations_component"
 # MCP Server configuration
 API_BASE_PATH_MCP = "/api/config_mcp/mcp"
 MCP_SERVER_NAME = "config-mcp"
-MCP_SERVER_VERSION = "1.2.0"
+MCP_SERVER_VERSION = "1.2.1"
