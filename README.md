@@ -1,4 +1,6 @@
-# Configuration MCP Server
+# Configuration MCP Server (Test)
+
+> **This is a test fork of [keith-gamble/hass-configuration-mcp](https://github.com/keith-gamble/hass-configuration-mcp) for testing the helpers feature before submitting a PR.**
 
 A Home Assistant custom component that exposes an MCP (Model Context Protocol) server and REST API endpoints for managing Home Assistant configuration programmatically. Designed for integration with AI assistants like Claude Code.
 
