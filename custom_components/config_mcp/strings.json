@@ -73,11 +73,13 @@
         "data": {
           "mcp_server": "Enable MCP Server",
           "mcp_oauth_enabled": "Enable OAuth Authentication",
+          "mcp_allowed_users": "Allowed Non-Admin Users",
           "logs_read": "Enable Log Reading"
         },
         "data_description": {
           "mcp_server": "Exposes 36+ tools for dashboards, automations, scripts, scenes, entities, devices, areas, integrations, services, and logs via MCP protocol",
           "mcp_oauth_enabled": "Allow browser-based OAuth login via the /mcp command in Claude Code. Requires hass-oidc-auth integration.",
+          "mcp_allowed_users": "Admins can always use the MCP server. Non-admin users listed here can also use it, for configuration changes only: they cannot trigger automations, run or stop scripts, or activate scenes.",
           "logs_read": "Allow MCP clients to read Home Assistant logs for debugging and verification"
         }
       },

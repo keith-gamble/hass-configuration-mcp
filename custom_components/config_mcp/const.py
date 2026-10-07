@@ -119,6 +119,19 @@ HELPER_DOMAINS = [
 # MCP Server configuration key
 CONF_MCP_SERVER = "mcp_server"
 CONF_MCP_OAUTH_ENABLED = "mcp_oauth_enabled"
+# Non-admin users allowed to use the MCP endpoint. Admins are always allowed.
+CONF_MCP_ALLOWED_USERS = "mcp_allowed_users"
+
+# MCP tools that act on the physical world rather than on configuration.
+# Only admins may call them; allowed non-admin users get config CRUD only.
+MCP_ADMIN_ONLY_TOOLS = frozenset(
+    {
+        "ha_trigger_automation",
+        "ha_run_script",
+        "ha_stop_script",
+        "ha_activate_scene",
+    }
+)
 
 # OIDC Provider domain (optional dependency)
 OIDC_DOMAIN = "oidc_provider"
@@ -275,4 +288,4 @@ DATA_AUTOMATIONS_COMPONENT = f"{DOMAIN}_automations_component"
 # MCP Server configuration
 API_BASE_PATH_MCP = "/api/config_mcp/mcp"
 MCP_SERVER_NAME = "config-mcp"
-MCP_SERVER_VERSION = "1.2.1"
+MCP_SERVER_VERSION = "1.2.2"

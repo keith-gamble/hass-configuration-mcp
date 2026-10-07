@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import selector
 
 from .const import (
     CONF_AUTOMATIONS_CREATE,
@@ -41,6 +42,7 @@ from .const import (
     CONF_LABELS_READ,
     CONF_LABELS_UPDATE,
     CONF_LOGS_READ,
+    CONF_MCP_ALLOWED_USERS,
     CONF_MCP_OAUTH_ENABLED,
     CONF_MCP_SERVER,
     CONF_SCENES_CREATE,
@@ -306,6 +308,19 @@ class HaCrudOptionsFlow(OptionsFlow):
                 CONF_MCP_OAUTH_ENABLED,
                 default=self._options.get(CONF_MCP_OAUTH_ENABLED, False),
             )] = bool
+
+        # Non-admin users who may use the MCP endpoint (admins always can)
+        user_options = [
+            selector.SelectOptionDict(value=u.id, label=u.name or u.id)
+            for u in await self.hass.auth.async_get_users()
+            if u.is_active and not u.system_generated and not u.is_admin
+        ]
+        schema_dict[vol.Optional(
+            CONF_MCP_ALLOWED_USERS,
+            default=self._options.get(CONF_MCP_ALLOWED_USERS, []),
+        )] = selector.SelectSelector(
+            selector.SelectSelectorConfig(options=user_options, multiple=True)
+        )
 
         # Log reading is always available as an option
         schema_dict[vol.Required(

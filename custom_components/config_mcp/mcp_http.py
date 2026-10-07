@@ -27,10 +27,18 @@ from mcp.server import Server
 from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage
 
+from homeassistant.auth.models import User
 from homeassistant.components.http import HomeAssistantView
+from homeassistant.components.http.auth import async_user_not_allowed_do_auth
 from homeassistant.core import HomeAssistant
 
-from .const import API_BASE_PATH_MCP, OAUTH_METADATA_PATH
+from .const import (
+    API_BASE_PATH_MCP,
+    CONF_MCP_ALLOWED_USERS,
+    DOMAIN,
+    MCP_ADMIN_ONLY_TOOLS,
+    OAUTH_METADATA_PATH,
+)
 from .mcp_server import create_mcp_server
 
 _LOGGER = logging.getLogger(__name__)
@@ -180,46 +188,77 @@ class MCPStreamableView(HomeAssistantView):
         self._hass = hass
         self._oauth_enabled = oauth_enabled
 
-    async def _validate_request(self, request: web.Request) -> tuple[bool, str | None]:
-        """Validate the request authentication.
+    def _allowed_user_ids(self) -> set[str]:
+        """Return the non-admin user IDs allowed to use the MCP endpoint."""
+        entries = self._hass.config_entries.async_entries(DOMAIN)
+        if not entries:
+            return set()
+        return set(entries[0].options.get(CONF_MCP_ALLOWED_USERS, []))
 
-        Tries HA's built-in token validation first, then OAuth if enabled.
+    async def _validate_request(
+        self, request: web.Request
+    ) -> tuple[User | None, str | None, HTTPStatus]:
+        """Validate the request authentication and authorization.
+
+        Resolves the Home Assistant user behind the token (an HA access token,
+        or an OAuth JWT whose ``sub`` is an HA user ID), then applies the same
+        checks HA applies to its own API: the user must be active, and a
+        local-only user must be connecting from a local address. Finally the
+        user must be an admin or listed in the ``mcp_allowed_users`` option.
 
         Args:
             request: The incoming request
 
         Returns:
-            Tuple of (is_valid, error_message)
+            Tuple of (user, error_message, status). ``user`` is None on failure.
         """
+        unauthorized = HTTPStatus.UNAUTHORIZED
+
         # Get authorization header
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            return False, "Missing or invalid Authorization header"
+            return None, "Missing or invalid Authorization header", unauthorized
 
         token = auth_header[7:]  # Strip "Bearer " prefix
+        user: User | None = None
 
         # First, try standard HA long-lived access token validation
         try:
             # Validate as a long-lived access token (sync method despite async_ prefix)
             refresh_token = self._hass.auth.async_validate_access_token(token)
             if refresh_token is not None:
+                user = refresh_token.user
                 _LOGGER.debug("Request authenticated via HA access token")
-                return True, None
         except Exception as err:
             _LOGGER.debug("HA token validation failed: %s", err)
 
         # If OAuth is enabled, try OAuth token validation
-        if self._oauth_enabled:
+        if user is None and self._oauth_enabled:
             from .oauth import validate_oauth_token
 
             claims = await validate_oauth_token(self._hass, token)
             if claims is not None:
+                user_id = claims.get("sub")
+                if user_id:
+                    user = await self._hass.auth.async_get_user(user_id)
+                if user is None:
+                    return None, "OAuth token does not map to a user", unauthorized
                 # Store claims in request for potential use
                 request["oauth_claims"] = claims
                 _LOGGER.debug("Request authenticated via OAuth token")
-                return True, None
 
-        return False, "Invalid authentication token"
+        if user is None:
+            return None, "Invalid authentication token", unauthorized
+
+        # Inactive users, and local-only users connecting from outside
+        if (reason := async_user_not_allowed_do_auth(self._hass, user, request)) is not None:
+            return None, reason, unauthorized
+
+        if not user.is_admin and user.id not in self._allowed_user_ids():
+            _LOGGER.warning("MCP access denied for non-admin user %s", user.name)
+            return None, "User is not allowed to use the MCP server", HTTPStatus.FORBIDDEN
+
+        return user, None, HTTPStatus.OK
 
     def _get_base_url_from_request(self, request: web.Request) -> str | None:
         """Get the base URL from the request."""
@@ -240,8 +279,10 @@ class MCPStreamableView(HomeAssistantView):
         waits for a response, and returns it.
         """
         # Validate authentication
-        is_valid, error = await self._validate_request(request)
-        if not is_valid:
+        user, error, status = await self._validate_request(request)
+        if user is None:
+            if status == HTTPStatus.FORBIDDEN:
+                return self.json_message(error or "Forbidden", HTTPStatus.FORBIDDEN)
             # If OAuth is enabled, include WWW-Authenticate header with metadata location
             if self._oauth_enabled:
                 base_url = self._get_base_url_from_request(request)
@@ -274,6 +315,23 @@ class MCPStreamableView(HomeAssistantView):
                 "Invalid JSON-RPC message",
                 HTTPStatus.BAD_REQUEST,
             )
+
+        # Non-admin users get configuration CRUD only, not the tools that act
+        # on the physical world (run a script, activate a scene, ...).
+        method = body.get("method")
+        if not user.is_admin and method == "tools/call":
+            tool_name = (body.get("params") or {}).get("name")
+            if tool_name in MCP_ADMIN_ONLY_TOOLS:
+                return web.json_response(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": body.get("id"),
+                        "error": {
+                            "code": -32001,
+                            "message": f"Tool {tool_name} requires an admin user",
+                        },
+                    }
+                )
 
         try:
             # Create the MCP server
@@ -319,7 +377,14 @@ class MCPStreamableView(HomeAssistantView):
                         # Cancel the server task
                         tg.cancel_scope.cancel()
                         # Unwrap the response message
-                        return web.json_response(_serialize_message(response_session_msg.message))
+                        payload = _serialize_message(response_session_msg.message)
+                        if not user.is_admin and method == "tools/list":
+                            tools = (payload.get("result") or {}).get("tools")
+                            if isinstance(tools, list):
+                                payload["result"]["tools"] = [
+                                    t for t in tools if t.get("name") not in MCP_ADMIN_ONLY_TOOLS
+                                ]
+                        return web.json_response(payload)
                     else:
                         # Notification - no response expected
                         tg.cancel_scope.cancel()
